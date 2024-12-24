@@ -1,8 +1,10 @@
 import boto3
+import os
 import json
 import datetime
 import logging
 from botocore.exceptions import ClientError
+from typing import Optional
 
 class AWSCostManager:
     def __init__(self, monthly_budget: float, email: str):
@@ -418,18 +420,14 @@ class AWSCostManager:
                     {'Type': 'DIMENSION', 'Key': 'USAGE_TYPE'}
                 ],
                 Filter={
-                    'And': [
-                        {
-                            'Dimensions': {
-                                'Key': 'SERVICE',
-                                'Values': [
-                                    'Amazon Elastic Container Service',
-                                    'Amazon Elastic Container Registry',
-                                    'Amazon Elastic Kubernetes Service'
-                                ]
-                            }
-                        }
-                    ]
+                    'Dimensions': {
+                        'Key': 'SERVICE',
+                        'Values': [
+                            'Amazon Elastic Container Service',
+                            'Amazon Elastic Container Registry',
+                            'Amazon Elastic Kubernetes Service'
+                        ]
+                    }
                 }
             )
             
@@ -465,15 +463,46 @@ class AWSCostManager:
             self.logger.error(f"Failed to get cost summary: {str(e)}")
             return {}
 
+def get_settings() -> tuple[float, str]:
+    """
+    Get settings from environment variables or prompt user if not set.
+    Returns tuple of (monthly_budget, email)
+    """
+    DEFAULT_EMAIL = 'username@yourcompany.com'
+    
+    # Get monthly budget
+    monthly_budget = os.getenv('AWS_COST_BUDGET')
+    if not monthly_budget:
+        monthly_budget = input('Enter monthly budget in USD (default: 75.00): ') or '75.00'
+    monthly_budget = float(monthly_budget)
+    
+    # Get notification email
+    email = os.getenv('AWS_COST_EMAIL')
+    if not email:
+        email = input(f'Enter notification email (hitting enter will use {DEFAULT_EMAIL}): ') or DEFAULT_EMAIL
+        
+    if email == DEFAULT_EMAIL:
+        logging.warning('Using default email address! Budget alerts will not reach you.')
+        proceed = input('Do you want to continue with the default email? (y/n): ')
+        if proceed.lower() != 'y':
+            return None, None
+            
+    return monthly_budget, email
+
 def main():
     """
     Main execution function that manages cost controls.
     Can be run multiple times safely.
     """
     try:
+        # Get settings
+        monthly_budget, email = get_settings()
+        if not email:  # User chose not to proceed with default email
+            return
+            
         manager = AWSCostManager(
-            monthly_budget=100.0,  # Set your monthly budget in USD
-            email='your.email@example.com'  # Set your email for notifications
+            monthly_budget=monthly_budget,
+            email=email
         )
         
         # Set up general cost management
